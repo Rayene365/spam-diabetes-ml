@@ -1,10 +1,15 @@
 from pathlib import Path
 from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 import pandas as pd
 
 
-DATA_DIR = Path(file).resolve().parent / "data"
+DATA_DIR = Path(__file__).resolve().parent / "data"
 
 
 def load_spambase() -> tuple[pd.DataFrame, pd.Series]:
@@ -46,3 +51,16 @@ def split_dataset(
         stratify=y,
     )
     return X_train, X_test, y_train, y_test
+
+def train_logistic_baseline(
+    X_train: pd.DataFrame, y_train: pd.Series
+) -> Pipeline:
+    """Fit a logistic regression pipeline on the training split."""
+    model = Pipeline(
+        [
+            ("impute", SimpleImputer(strategy="median")),
+            ("scale", StandardScaler()),
+            ("classifier", LogisticRegression(max_iter=1000)),
+        ]
+    )
+    return model.fit(X_train, y_train)
