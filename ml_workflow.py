@@ -5,6 +5,15 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    balanced_accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 import pandas as pd
 
@@ -64,3 +73,22 @@ def train_logistic_baseline(
         ]
     )
     return model.fit(X_train, y_train)
+
+def evaluate_classifier(
+    model: Pipeline,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+) -> dict[str, float]:
+    """Evaluate a fitted classifier with binary labels 0 and 1."""
+    y_pred = model.predict(X_test)
+    y_score = model.predict_proba(X_test)[:, 1]
+
+    return {
+        "accuracy": accuracy_score(y_test, y_pred),
+        "balanced_accuracy": balanced_accuracy_score(y_test, y_pred),
+        "precision": precision_score(y_test, y_pred, zero_division=0),
+        "recall": recall_score(y_test, y_pred, zero_division=0),
+        "f1": f1_score(y_test, y_pred, zero_division=0),
+        "roc_auc": roc_auc_score(y_test, y_score),
+        "average_precision": average_precision_score(y_test, y_score),
+    }
