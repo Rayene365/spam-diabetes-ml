@@ -64,14 +64,23 @@ def split_dataset(
     return X_train, X_test, y_train, y_test
 
 def train_logistic_baseline(
-    X_train: pd.DataFrame, y_train: pd.Series
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    *,
+    class_weight: str | None = None,
 ) -> Pipeline:
-    """Fit a logistic regression pipeline on the training split."""
+    """Fit a logistic regression pipeline with optional class weighting."""
     model = Pipeline(
         [
             ("impute", SimpleImputer(strategy="median")),
             ("scale", StandardScaler()),
-            ("classifier", LogisticRegression(max_iter=1000)),
+            (
+                "classifier",
+                LogisticRegression(
+                    max_iter=1000,
+                    class_weight=class_weight,
+                ),
+            ),
         ]
     )
     return model.fit(X_train, y_train)
