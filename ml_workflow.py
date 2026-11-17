@@ -1,8 +1,8 @@
 from pathlib import Path
+
+import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -12,12 +12,12 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import (
-    StratifiedKFold,
-    cross_validate,
-    train_test_split,
-)
-import pandas as pd
+from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import LinearSVC
 
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -38,6 +38,7 @@ def load_spambase() -> tuple[pd.DataFrame, pd.Series]:
 
     return data.drop(columns="spam"), data["spam"]
 
+
 def load_diabetes() -> tuple[pd.DataFrame, pd.Series]:
     """Return the BRFSS 2015 features and binary diabetes labels."""
     filename = "diabetes_binary_health_indicators_BRFSS2015.csv"
@@ -45,6 +46,7 @@ def load_diabetes() -> tuple[pd.DataFrame, pd.Series]:
     target = "Diabetes_binary"
 
     return data.drop(columns=target), data[target].astype(int)
+
 
 def split_dataset(
     X: pd.DataFrame,
@@ -62,6 +64,7 @@ def split_dataset(
         stratify=y,
     )
     return X_train, X_test, y_train, y_test
+
 
 def train_logistic_baseline(
     X_train: pd.DataFrame,
@@ -85,14 +88,18 @@ def train_logistic_baseline(
     )
     return model.fit(X_train, y_train)
 
+
 def evaluate_classifier(
     model: Pipeline,
     X_test: pd.DataFrame,
     y_test: pd.Series,
 ) -> dict[str, float]:
-    """Evaluate a fitted classifier with binary labels 0 and 1."""
+    """Evaluate binary labels 0 and 1 using probabilities or decision scores."""
     y_pred = model.predict(X_test)
-    y_score = model.predict_proba(X_test)[:, 1]
+    if hasattr(model, "predict_proba"):
+        y_score = model.predict_proba(X_test)[:, 1]
+    else:
+        y_score = model.decision_function(X_test)
 
     return {
         "accuracy": accuracy_score(y_test, y_pred),
@@ -103,6 +110,8 @@ def evaluate_classifier(
         "roc_auc": roc_auc_score(y_test, y_score),
         "average_precision": average_precision_score(y_test, y_score),
     }
+
+
 def cross_validate_classifier(
     model: Pipeline,
     X_train: pd.DataFrame,
@@ -134,3 +143,65 @@ def cross_validate_classifier(
         validation_scores,
         index=range(1, n_splits + 1),
     ).rename_axis("fold")
+
+
+def build_models(random_state: int = 42) -> dict[str, Pipeline]:
+    """Build the classifiers used in the model comparison."""
+    classifiers = {
+        "Logistic regression": LogisticRegression(max_iter=1000),
+        "Logistic regression (balanced)": LogisticRegression(
+            max_iter=1000,
+            class_weight="balanced",
+        ),
+        "Gaussian Naive Bayes": GaussianNB(),
+        "Linear SVM (balanced)": LinearSVC(
+            C=1.0,
+            class_weight="balanced",
+            dual=False,
+            max_iter=5000,
+            random_state=random_state,
+        ),
+        "MLP": MLPClassifier(
+            hidden_layer_sizes=(32,),
+            batch_size=256,
+            max_iter=300,
+            early_stopping=True,
+            n_iter_no_change=15,
+            random_state=random_state,
+        ),
+    }
+    return {
+        name: Pipeline(
+            [
+                ("impute", SimpleImputer(strategy="median")),
+                ("scale", StandardScaler()),
+                ("classifier", classifier),
+            ]
+        )
+        for name, classifier in classifiers.items()
+    }
+
+
+def compare_models(
+    models: dict[str, Pipeline],
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    *,
+    n_splits: int = 5,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return mean/std metrics and per-fold scores for each model."""
+    fold_scores = {}
+    for name, model in models.items():
+        print(f"Cross-validating {name}", flush=True)
+        fold_scores[name] = cross_validate_classifier(
+            model,
+            X_train,
+            y_train,
+            n_splits=n_splits,
+            random_state=random_state,
+        )
+
+    per_fold = pd.concat(fold_scores, names=["model", "fold"])
+    summary = per_fold.groupby(level="model", sort=False).agg(["mean", "std"])
+    return summary, per_fold
