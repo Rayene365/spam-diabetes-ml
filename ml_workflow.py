@@ -1,8 +1,6 @@
 from pathlib import Path
-from sklearn.model_selection import train_test_split
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
@@ -14,7 +12,11 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-
+from sklearn.model_selection import (
+    StratifiedKFold,
+    cross_validate,
+    train_test_split,
+)
 import pandas as pd
 
 
@@ -92,3 +94,34 @@ def evaluate_classifier(
         "roc_auc": roc_auc_score(y_test, y_score),
         "average_precision": average_precision_score(y_test, y_score),
     }
+def cross_validate_classifier(
+    model: Pipeline,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    *,
+    n_splits: int = 5,
+    random_state: int = 42,
+) -> pd.DataFrame:
+    """Return validation metrics for each stratified fold of the training data."""
+    folds = StratifiedKFold(
+        n_splits=n_splits,
+        shuffle=True,
+        random_state=random_state,
+    )
+    scores = cross_validate(
+        model,
+        X_train,
+        y_train,
+        cv=folds,
+        scoring=evaluate_classifier,
+        error_score="raise",
+    )
+    validation_scores = {
+        key.removeprefix("test_"): values
+        for key, values in scores.items()
+        if key.startswith("test_")
+    }
+    return pd.DataFrame(
+        validation_scores,
+        index=range(1, n_splits + 1),
+    ).rename_axis("fold")
