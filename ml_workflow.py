@@ -18,6 +18,9 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
+from sklearn.base import clone
+from sklearn.feature_selection import SelectPercentile, f_classif
+from sklearn.model_selection import GridSearchCV
 
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -205,3 +208,77 @@ def compare_models(
     per_fold = pd.concat(fold_scores, names=["model", "fold"])
     summary = per_fold.groupby(level="model", sort=False).agg(["mean", "std"])
     return summary, per_fold
+def search_feature_selection(
+    models: dict[str, Pipeline],
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    *,
+    n_splits: int = 5,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, dict[str, GridSearchCV]]:
+    """Tune feature percentage and C for logistic-regression/SVM pipelines."""
+    folds = StratifiedKFold(
+        n_splits=n_splits,
+        shuffle=True,
+        random_state=random_state,
+    )
+
+    parameter_grid = {
+        "select__percentile": [25, 50, 75, 100],
+        "classifier__C": [0.1, 1.0, 10.0],
+    }
+
+    metrics = [
+        "accuracy",
+        "balanced_accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "roc_auc",
+        "average_precision",
+    ]
+    summaries = []
+    searches = {}
+
+    for name, model in models.items():
+        print(f"Searching feature selection and C for {name}", flush=True)
+
+        base_model = clone(model)
+        pipeline = Pipeline(
+            base_model.steps[:-1]
+            + [("select", SelectPercentile(score_func=f_classif))]
+            + base_model.steps[-1:]
+        )
+
+        search = GridSearchCV(
+            pipeline,
+            parameter_grid,
+            scoring=evaluate_classifier,
+            refit="f1",
+            cv=folds,
+            n_jobs=1,
+            error_score="raise",
+            verbose=1,
+        )
+        search.fit(X_train, y_train)
+        searches[name] = search
+
+        results = pd.DataFrame(search.cv_results_)
+        summary = pd.DataFrame({
+            "model": name,
+            "percentile": results["param_select__percentile"].astype(int),
+            "C": results["param_classifier__C"].astype(float),
+            **{
+                metric: results[f"mean_test_{metric}"]
+                for metric in metrics
+            },
+            "f1_std": results["std_test_f1"],
+        })
+        summaries.append(summary)
+
+    comparison = pd.concat(summaries, ignore_index=True)
+    comparison = comparison.sort_values(
+        "f1", ascending=False, kind="stable"
+    ).reset_index(drop=True)
+
+    return comparison, searches
