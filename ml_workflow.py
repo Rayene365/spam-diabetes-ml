@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -11,6 +12,9 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     roc_auc_score,
+    ConfusionMatrixDisplay,
+    PrecisionRecallDisplay,
+    RocCurveDisplay,
 )
 from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
 from sklearn.naive_bayes import GaussianNB
@@ -282,3 +286,51 @@ def search_feature_selection(
     ).reset_index(drop=True)
 
     return comparison, searches
+
+def plot_test_results(
+    model: Pipeline,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    *,
+    title: str = "Final test evaluation",
+    class_names: tuple[str, str] = ("Class 0", "Class 1"),
+) -> plt.Figure:
+    """Plot the confusion matrix, ROC curve, and precision-recall curve."""
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+
+    ConfusionMatrixDisplay.from_estimator(
+        model,
+        X_test,
+        y_test,
+        labels=[0, 1],
+        display_labels=class_names,
+        values_format="d",
+        cmap="Blues",
+        colorbar=False,
+        ax=axes[0],
+    )
+    axes[0].set_title("Confusion matrix")
+
+    RocCurveDisplay.from_estimator(
+        model,
+        X_test,
+        y_test,
+        name="Selected model",
+        plot_chance_level=True,
+        ax=axes[1],
+    )
+    axes[1].set_title("ROC curve")
+
+    PrecisionRecallDisplay.from_estimator(
+        model,
+        X_test,
+        y_test,
+        name="Selected model",
+        plot_chance_level=True,
+        ax=axes[2],
+    )
+    axes[2].set_title("Precision-recall curve")
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    return fig
